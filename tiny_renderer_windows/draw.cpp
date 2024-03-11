@@ -1,6 +1,19 @@
-//#include <limits>
+#include <limits>
+#include <algorithm>
 #include "model.h"
 #include "our_gl.h"
+
+#define NOMINMAX
+#include <windows.h>
+#define X_START    10
+//结束X坐标
+#define X_END    650
+//每个值的X坐标增量，相当于512uS
+#define X_INC    10
+//Y坐标
+#define Y    250
+HWND    hwnd;
+HDC    hdc;
 
 constexpr int width  = 800; // output image size
 constexpr int height = 800;
@@ -11,6 +24,7 @@ constexpr vec3        up{0,1,0}; // camera up vector
 
 extern mat<4,4> ModelView; // "OpenGL" state matrices
 extern mat<4,4> Projection;
+char screen_buff[800 * 800 * 32];
 
 struct Shader : IShader {
     const Model &model;
@@ -45,7 +59,7 @@ struct Shader : IShader {
         vec3 n = (B * model.normal(uv)).normalized(); // transform the normal from the texture to the tangent space
         double diff = std::max(0., n*uniform_l); // diffuse light intensity
         vec3 r = (n*(n*uniform_l)*2 - uniform_l).normalized(); // reflected light direction, specular mapping is described here: https://github.com/ssloy/tinyrenderer/wiki/Lesson-6-Shaders-for-the-software-renderer
-        double spec = std::pow(std::max(-r.z, 0.), 5+sample2D(model.specular(), uv)[0]); // specular intensity, note that the camera lies on the z-axis (in view), therefore simple -r.z
+        double spec = std::pow((std::max)(-r.z, 0.), 5+sample2D(model.specular(), uv)[0]); // specular intensity, note that the camera lies on the z-axis (in view), therefore simple -r.z
 
         TGAColor c = sample2D(model.diffuse(), uv);
         for (int i : {0,1,2})
@@ -55,28 +69,22 @@ struct Shader : IShader {
     }
 };
 
-int main(int argc, char** argv) {
-    if (2>argc) {
-        std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
-        return 1;
-    }
+char* draw_main() {
     TGAImage framebuffer(width, height, TGAImage::RGB); // the output image
     lookat(eye, center, up);                            // build the ModelView matrix
     viewport(width/8, height/8, width*3/4, height*3/4); // build the Viewport matrix
     projection((eye-center).norm());                    // build the Projection matrix
     std::vector<double> zbuffer(width*height, std::numeric_limits<double>::max());
 
-    for (int m=1; m<argc; m++) { // iterate through all input objects
-        Model model(argv[m]);
-        Shader shader(model);
-        for (int i=0; i<model.nfaces(); i++) { // for every triangle
-            vec4 clip_vert[3]; // triangle coordinates (clip coordinates), written by VS, read by FS
-            for (int j : {0,1,2})
-                shader.vertex(i, j, clip_vert[j]); // call the vertex shader for each triangle vertex
-            triangle(clip_vert, shader, framebuffer, zbuffer); // actual rasterization routine call
-        }
+    Model model("../obj/boggie/body.obj");
+    Shader shader(model);
+    for (int i=0; i<model.nfaces(); i++) { // for every triangle
+        vec4 clip_vert[3]; // triangle coordinates (clip coordinates), written by VS, read by FS
+        for (int j : {0,1,2})
+        shader.vertex(i, j, clip_vert[j]); // call the vertex shader for each triangle vertex
+        triangle_to_buffer(clip_vert, shader, screen_buff,width,height, zbuffer); // actual rasterization routine call
     }
-    framebuffer.write_tga_file("framebuffer.tga");
-    return 0;
+
+    return screen_buff;
 }
 
